@@ -1,62 +1,69 @@
-
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const bcrypt = require('bcrypt')
-const jwt = require('jsonwebtoken')
+const bcrypt = require("bcrypt");
+const User = require("../models/user");
+const jwt = require("jsonwebtoken");
 
-const User = require('../models/user')
-const saltRounds = 12 
-router.post('/sign-up', async (req, res) => {
-    try {
-// make sure username is unique
-        const userInDatabase = await User.findOne({username: req.body.username})
-        if(userInDatabase) {
-            return res.status(409).json({ err: "Username already taken"})
-        }
+const saltRounds = 12;
 
-        const user = await User.create({
-            username: req.body.username,
-            hashedPassword: bcrypt.hashSync(req.body.password, saltRounds)
-       
-        })
+router.post("/sign-up", async (req, res) => {
+  try {
+    // make sure a user with this username does not exist
+    const userInDatabase = await User.findOne({ username: req.body.username });
 
-    // Construct the payload
+    if (userInDatabase) {
+      return res.status(409).json({ err: "Username already taken" });
+    }
+
+    // No user with that username, lets create a new user
+    const user = await User.create({
+      username: req.body.username,
+      hashedPassword: bcrypt.hashSync(req.body.password, saltRounds),
+    });
+
     const payload = { username: user.username, _id: user._id };
 
-    // Create the token, attaching the payload
+    // Create a new auth jwt token for the new user
     const token = jwt.sign({ payload }, process.env.JWT_SECRET);
 
-    // Send the token instead of the user
     res.status(201).json({ token });
-    } catch (err) {
-        res.status(500).json({ err: err.message });
-    }
+  } catch (error) {
+    res.status(500).json({ err: error.message });
+  }
 });
 
+router.post("/sign-in", async (req, res) => {
+  try {
+    // make sure a user with this username does not exist
+    const userInDatabase = await User.findOne({ username: req.body.username });
 
+    if (!userInDatabase) {
+      return res.status(409).json({ err: "Invalid Credentials, user does not exist" });
+    }
 
-router.post('/sign-in', async (req, res) => {
-    try{
-    // Look up the user by their username in the database
-    const userInDatabase = await User.findOne({username: req.body.username})
-    // If the user doesn't exist, return a 401 status code with a message
-         if (!userInDatabase) {
-        return res.status(401).json({ err: 'Invalid credentials.' });
-        }
-            // Check if the password is correct using bcrypt
+    // this will return true if the password match and false if they do not
     const isPasswordCorrect = bcrypt.compareSync(
-        req.body.password, userInDatabase.hashedPassword
-      );
-      if(!isPasswordCorrect){
-        return res.status(401).json ({ err: "Invalid credentials"})
-      }
-      const payload = {username: userInDatabase.username, _id: userInDatabase._id }
-      const token = jwt.sign({ payload}, process.env.JWT_SECRET)
-        res.status(200).json({ token })
+      req.body.password,
+      userInDatabase.hashedPassword
+    );
 
-    } catch (err) {
-    res.status(500).json({ err: err.message });
+    if (!isPasswordCorrect) {
+      return res.status(401).json({ err: "Invalid Password" });
+    }
+
+    const payload = {
+      username: userInDatabase.username,
+      _id: userInDatabase._id,
+    };
+
+    // Create a new auth jwt token for the user
+    const token = jwt.sign({ payload }, process.env.JWT_SECRET);
+
+    res.status(200).json({ token });
+
+  } catch (error) {
+    res.status(500).json({ err: error.message });
   }
-})
+});
 
 module.exports = router;
